@@ -1,6 +1,7 @@
 using PCPOP,Mosek,MosekTools,JuMP
 include("./three_meas_corr.jl")
 
+# objective generator if key is extracted from Alice's side
 function obj_i_term_A(ρ,Pi,αi,βi)
     res_αi=Pi[1]*ρ[1] + Pi[2]*ρ[2]
     res_βi=(Pi[1]+Pi[2])*(ρ[1]+ρ[2])
@@ -8,6 +9,7 @@ function obj_i_term_A(ρ,Pi,αi,βi)
     return res
 end
 
+# objective generator if key is extracted from Bob's side
 function obj_i_term_B(ρ,Pi,αi,βi,M)
     res_αi=Pi[1]*(ρ[1]+ρ[2])*M[1] + Pi[2]*(ρ[1]+ρ[2])*M[2]
     res_βi=(Pi[1]+Pi[2])*(ρ[1]+ρ[2])
@@ -15,170 +17,89 @@ function obj_i_term_B(ρ,Pi,αi,βi,M)
     return res
 end
 
-function obj_i_term_ua_A(ρ,Pi,αi,βi)
-    den=length(ρ)
-    res_αi=Pi[1]*sum(ρ[i] for i in 1:floor(Int,den/2))+Pi[2]*sum(ρ[i] for i in floor(Int,den/2)+1:den)
-    res_βi=(Pi[1] + Pi[2])*sum(ρ)
-    res=-(1/den)*(αi*res_αi + βi*res_βi)
-    return res
-end
 
-function obj_i_term_ua_B(ρ,Pi,αi,βi,M)
-    den=length(ρ)
-    den_h=floor(Int,den/2)
-    res_αi=Pi[1]*sum((ρ[i]+ρ[i+den_h])*M[1,i] for i in 1:den_h) + Pi[2]*sum((ρ[i]+ρ[i+den_h])*M[2,i] for i in 1:den_h )
-    res_βi=sum(ρ[i] for i in 1:den) * sum(Pi[i] for i in 1:length(Pi))
-    res=-(1/den)*(αi*res_αi + βi*res_βi)
-    return res
-end
+"""
+    Implements the (4,3) protocol.
 
-function cond_entropy_four_eta(G,level,fname;step_size=0.1,Alice=true,pure=false,start_grid=0.0,stop_grid=1.0,uniform=true,optimizer=Mosek.Optimizer)
-    
+    The below function computes the conditional entropy H(A|E) for a given guessing probability G and visibility v, while sweeping over the parameter eta.
+    The results are saved to a specified file path :fname.
+    Key is always extracted from Alice's side.
+    It localizes the objective function to save resources.
+
+    Arguments:
+    - G: Guessing probability.
+    - v: Visibility parameter.
+    - fname: File path to save the results.
+    - level: Level of the NPA hierarchy (default: "1+B*E").
+    - step_size: Step size for the grid points (default: 0.1).
+    - eta_start: Starting value for eta (default: 1).
+    - Alice: Whether to extract key from Alice's inputs (default: true).
+    - start_grid: Starting value for the grid (default: 0.0).
+    - stop_grid: Stopping value for the grid (default: 1.0).
+    - uniform: Whether to use uniform grid points (default: true).
+    - optimizer: Optimizer to use (default: Mosek.Optimizer).
+"""
+function cond_entropy_four_local_eta(G,v,fname;level="1+B*E",step_size=0.1,eta_start=1,Alice=true,pure=false,start_grid=0.0,stop_grid=1.0,uniform=true,optimizer=Mosek.Optimizer)
+    # Adv BFF grid points
     points = grid_points(step_size;start=start_grid,stop=stop_grid,uniform=uniform)
     α,β = grid_to_coeffs(points)
     tot_points=length(points)
-    tot=2*tot_points
-    @pcmonoid M B[3,0] E[tot,0] BE[5,0] 
-    # @pcmonoid M B[3,0] E[1,0] BE[5,0] 
-    @comms B E
-    # @comms B E
-    Projector.([B;E])
-    if pure
-        Projector.(BE[1:4])
-    end
-    build(M)
 
-    PB=[B[1] B[2] B[3];1-B[1] 1-B[2] 1-B[3]]
-    ρ = BE[1:4]
-    σ = BE[5]
-    PE=reshape(E,tot_points,2)
-    # PE=[E[1];1-E[1]]
-    op_ge = [σ-0.25*ρ[x] for x in 1:4]
-    if ! pure
-        op_ge = vcat(op_ge, [ρ[x]-ρ[x]*ρ[x] for x in 1:4])
-    end
-    tr_ge = [ [-σ, -G]]
-
-    if Alice
-        obj=sum(obj_i_term_A(ρ[1:2],PE[i,:],α[i],β[i]) for i in 1:tot_points)
-    else
-        obj=sum(obj_i_term_B(ρ[1:2],PE[i,:],α[i],β[i],[PB[1,1],PB[2,1]]) for i in 1:tot_points)
-    end
-
-    plx = [1-i/100 for i in 0:100]
-    ply=ones(length(plx))
-    for i in 1:length(plx)
-        η=plx[i]
-        tr_eq = [ [ ρ[x], 1] for x in 1:4]
-        tr_eq=vcat(tr_eq,[[ρ[x]*PB[1,y],prob_four(1, x, y,plx[η] ;bin=true)] for x in 1:4 for y in 1:3])
-
-
-        # obj = (ρ[1]*PB[1,1]*PE[1] + ρ[1]*PB[2,1]*PE[1] + ρ[2]*PB[1,1]*PE[2] + ρ[2]*PB[2,1]*PE[2])/2
-        ov,model,dict,pri_mat=npa(obj,level;op_ge=op_ge,tr_eq=tr_eq,tr_ge=tr_ge,cyclic=true,normalize=false,list_vars=M.vertices,optimizer=optimizer)
-        ply[i]=(1+ov)/log(2)
-        return model
-        open(fname,"a") do file
-            write(file,"$(plx[i]) $(ply[i])\n")
-        end
-    end
-    return plx,ply
-end
-
-function cond_entropy_prob_four_G(η,level,step_size,fname;Alice=true,pure=true,start_grid=0.0,stop_grid=1.0,uniform=true,optimizer=Mosek.Optimizer)
-    
-    points = grid_points(step_size;start=start_grid,stop=stop_grid,uniform=uniform)
-    α,β = grid_to_coeffs(points)
-    tot_points=length(points)
-    tot=2*tot_points
-    @pcmonoid M B[3,0] E[tot,0] BE[5,0] 
-    # @pcmonoid M B[3,0] E[1,0] BE[5,0] 
-    @comms B E
-    # @comms B E
-    Projector.([B;E])
-    if pure
-        Projector.(BE[1:4])
-    end
-    build(M)
-
-    PB=[B[1] B[2] B[3];1-B[1] 1-B[2] 1-B[3]]
-    ρ = BE[1:4]
-    σ = BE[5]
-    PE=reshape(E,tot_points,2)
-    # PE=[E[1];1-E[1]]
-    op_ge = [σ-0.25*ρ[x] for x in 1:4]
-    if ! pure
-        op_ge = vcat(op_ge, [ρ[x]-ρ[x]*ρ[x] for x in 1:4])
-    end
-    tr_eq=[[ρ[x]*PB[1,y],prob_four(1, x, y,η ;bin=true)] for x in 1:4 for y in 1:3]
-    tr_eq = vcat(tr_eq,[ [ ρ[x], 1] for x in 1:4])
-
-    if Alice
-        obj=sum(obj_i_term_A(ρ[1:2],PE[i,:],α[i],β[i]) for i in 1:tot_points)
-    else
-        obj=sum(obj_i_term_B(ρ[1:2],PE[i,:],α[i],β[i],[PB[1,1],PB[2,1]]) for i in 1:tot_points)
-    end
-
-    plx=[0.5+i/100 for i in 0:50]
-    ply=ones(length(plx))
-    for i in 1:length(plx)
-        G=plx[i]
-        tr_ge = [ [-σ, -G]]
-        # obj = (ρ[1]*PB[1,1]*PE[1] + ρ[1]*PB[2,1]*PE[1] + ρ[2]*PB[1,1]*PE[2] + ρ[2]*PB[2,1]*PE[2])/2
-        ov,model,dict,pri_mat=npa(obj,level;op_ge=op_ge,tr_eq=tr_eq,tr_ge=tr_ge,cyclic=true,normalize=false,list_vars=M.vertices,optimizer=optimizer)
-        ply[i]=(1+ov)/log(2)
-        open(fname,"a") do file
-            write(file,"$(plx[i]) $(ply[i])\n")
-        end
-    end
-    return plx,ply
-end
-
-
-function cond_entropy_four_local_eta(G,level,v,fname;step_size=0.1,eta_start=1,Alice=true,pure=false,start_grid=0.0,stop_grid=1.0,uniform=true,optimizer=Mosek.Optimizer)
-    
-    points = grid_points(step_size;start=start_grid,stop=stop_grid,uniform=uniform)
-    α,β = grid_to_coeffs(points)
-    tot_points=length(points)
+    # Setup the monoid
     @pcmonoid M B[3,0] E[2,0] BE[5,0] 
+    # Bob and Eve's measurements commute
     @comms B E
+    # Projector constraints for Bob and Eve's measurements
     Projector.([B;E])
-    if pure
-        Projector.(BE[1:4])
-    end
     build(M)
 
+    # extract the operators for the protocol
     PB=[B[1] B[2] B[3];1-B[1] 1-B[2] 1-B[3]]
     ρ = BE[1:4]
     σ = BE[5]
+
+    # Information constraints
     op_ge = [σ-0.25*ρ[x] for x in 1:4]
 
-    if ! pure
-        op_ge = vcat(op_ge, [ρ[x]-ρ[x]*ρ[x] for x in 1:4])
-    end
+    # Additional constraints for mixed states
+    op_ge = vcat(op_ge, [ρ[x]-ρ[x]*ρ[x] for x in 1:4])
+
+    # Sweep over eta values and compute the conditional entropy H(A|E) for each eta, saving the results to the specified file path.
     plx=[eta_start-i/100 for i in 0:100]
     ply=ones(length(plx))
+
     for i in 1:length(plx)
+        # grab the current eta value
         η=plx[i]
+
+        #  Probability constraints for the protocol
         tr_eq=[[ρ[x]*PB[1,y],prob_four(1, x, y,η;v=v,bin=true )] for x in 1:4 for y in 1:3]
+        # Normalization constraints: Tr(ρₓ)=1
         tr_eq = vcat(tr_eq,[ [ ρ[x], 1] for x in 1:4])
+        # Information constraints: Eve's guessing probability P_g^A ≤ G
         tr_ge = [ [-σ, -G]]
+
         obj_val=0
         if Alice
+            # Compute the conditional entropy H(A|B) for the current eta and visibility where Bob doesn't bin. Used to determine when to stop the sweep (keyrate non-positive).
             cond_entropy = conditional_entropy_four_A(η;v=v,bin=false)
             objs=[obj_i_term_A(ρ[1:2],E,α[i],β[i]) for i in 1:tot_points]
         else
+            # Compute the conditional entropy H(B|A) for the current eta and visibility where Bob bins. Used to determine when to stop the sweep (keyrate non-positive).
             cond_entropy = conditional_entropy_four_B(η;v=v,bin=true)
             objs=[obj_i_term_B(ρ[1:2],E,α[i],β[i],[PB[1,1],PB[2,1]]) for i in 1:tot_points]
         end
+
         for obj in objs
             ov,model,dict,pri_mat=npa(obj,level;op_ge=op_ge,tr_eq=tr_eq,tr_ge=tr_ge,min=true,tracial=true,normalize=false,optimizer= optimizer,list_vars=M.vertices)
             obj_val += ov
         end
+        # Compute H(A|E) from the optimal value
         ply[i]=(1+obj_val)/log(2)
         open(fname,"a") do file
             write(file,"$(plx[i]) $(ply[i])\n")
         end
-        if ply[i]-cond_entropy < 0.001
+        if ply[i]-cond_entropy < 0.00001
             break
         end
     end
@@ -186,11 +107,12 @@ function cond_entropy_four_local_eta(G,level,v,fname;step_size=0.1,eta_start=1,A
 end
 
 
-function cond_entropy_four_local_visibility(G,level,fname;step_size=0.1,v_start=1,Alice=true,pure=true,start_grid=0.0,stop_grid=1.0,uniform=true,optimizer=Mosek.Optimizer)
+function cond_entropy_four_local_visibility(G,η,fname;level = "1+B*E",step_size=0.1,v_start=1,Alice=true,pure=true,start_grid=0.0,stop_grid=1.0,uniform=true,optimizer=Mosek.Optimizer)
     
     points = grid_points(step_size;start=start_grid,stop=stop_grid,uniform=uniform)
     α,β = grid_to_coeffs(points)
     tot_points=length(points)
+
     @pcmonoid M B[3,0] E[2,0] BE[5,0] 
     @comms B E
     Projector.([B;E])
@@ -199,23 +121,28 @@ function cond_entropy_four_local_visibility(G,level,fname;step_size=0.1,v_start=
     end
     build(M)
 
-    η=1.0
-
     PB=[B[1] B[2] B[3];1-B[1] 1-B[2] 1-B[3]]
     ρ = BE[1:4]
     σ = BE[5]
+
     op_ge = [σ-0.25*ρ[x] for x in 1:4]
 
     if ! pure
         op_ge = vcat(op_ge, [ρ[x]-ρ[x]*ρ[x] for x in 1:4])
     end
+
     plx=[v_start-i/100 for i in 0:100]
     ply=ones(length(plx))
+
     for i in 1:length(plx)
+
         v=plx[i]
+
         tr_eq=[[1*ρ[x]*PB[1,y],prob_four(1, x, y,η;v=v,bin=true )] for x in 1:4 for y in 1:3]
         tr_eq = vcat(tr_eq,[ [ 1*ρ[x], 1] for x in 1:4])
+
         tr_ge = [ [-1*σ, -G]]
+
         obj_val=0
         if Alice
             cond_entropy = conditional_entropy_four_A(η;v=v,bin=false)
@@ -224,6 +151,7 @@ function cond_entropy_four_local_visibility(G,level,fname;step_size=0.1,v_start=
             cond_entropy = conditional_entropy_four_B(η;v=v,bin=true)
             objs=[obj_i_term_B(ρ[1:2],E,α[i],β[i],[PB[1,1],PB[2,1]]) for i in 1:tot_points]
         end
+
         ops,ops_principal=basis_gen(objs[1],level,[],op_ge,tr_eq,tr_ge,M.vertices,-1)
         model,S,V,mons,LMI = npa_dual(0,ops,ops_principal;op_ge=op_ge,tr_eq=tr_eq,tr_ge=tr_ge,min=true,tracial=true,normalize=false,change_objective=true)
 
@@ -238,11 +166,13 @@ function cond_entropy_four_local_visibility(G,level,fname;step_size=0.1,v_start=
             old_obj = obj
             obj_val += ovi
         end
+
         ply[i]=(1+obj_val)/log(2)
+
         open(fname,"a") do file
             write(file,"$(plx[i]) $(ply[i])\n")
         end
-        if ply[i]-cond_entropy < 0.001
+        if ply[i]-cond_entropy < 0.00001
             break
         end
     end
@@ -250,118 +180,57 @@ function cond_entropy_four_local_visibility(G,level,fname;step_size=0.1,v_start=
 end
 
 
-function cond_entropy_four_local_G(η,level,step_size,fname;G_start=0.5,Alice=true,pure=true,start_grid=0.0,stop_grid=1.0,bounded=false,uniform=true,optimizer=Mosek.Optimizer)
-    
-    points = grid_points(step_size;start=start_grid,stop=stop_grid,uniform=uniform)
-    α,β = grid_to_coeffs(points)
-    tot_points=length(points)
-    @pcmonoid M B[3,0] E[2,0] BE[5,0] 
-    @comms B E
-    Projector.([B;E])
-    if pure
-        Projector.(BE[1:4])
-    end
-    build(M)
-
-    PB=[B[1] B[2] B[3];1-B[1] 1-B[2] 1-B[3]]
-    ρ = BE[1:4]
-    σ = BE[5]
-    op_ge = [σ-0.25*ρ[x] for x in 1:4]
-
-    if ! pure
-        op_ge = vcat(op_ge, [ρ[x]-ρ[x]*ρ[x] for x in 1:4])
-    end
-    plx=[G_start+i/100 for i in 0:50]
-    ply=ones(length(plx))
-    for i in 1:length(plx)
-        G=plx[i]
-        tr_eq=[[ρ[x]*PB[1,y],prob_four(1, x, y,η ;bin=true)] for x in 1:4 for y in 1:3]
-        tr_eq = vcat(tr_eq,[ [ ρ[x], 1] for x in 1:4])
-        tr_ge = [ [-σ, -G]]
-        obj_val=0
-        if Alice
-            cond_entropy = conditional_entropy_four_A(η;bin=false)
-            objs=[obj_i_term_A(ρ[1:2],E,α[i],β[i]) for i in 1:tot_points]
-        else
-            cond_entropy = conditional_entropy_four_B(η;bin=true)
-            objs=[obj_i_term_B(ρ[1:2],E,α[i],β[i],[PB[1,1],PB[2,1]]) for i in 1:tot_points]
-        end
-        for obj in objs
-            ov,model,dict,pri_mat=npa(obj,level;op_ge=op_ge,tr_eq=tr_eq,tr_ge=tr_ge,min=true,cyclic=true,normalize=false,optimizer= optimizer,list_vars=M.vertices)
-            obj_val += ov
-            if primal_status(model) != MOI.FEASIBLE_POINT || dual_status(model) != MOI.FEASIBLE_POINT
-                println("Warning: Optimization did not converge to optimal, status being primal=$(primal_status(model)), dual=$(dual_status(model))")
-            end
-        end
-        ply[i]=(1+obj_val)/log(2)
-        open(fname,"a") do file
-            write(file,"$(plx[i]) $(ply[i])\n")
-        end
-        if ply[i]-cond_entropy < 0.001
-            break
-        end
-    end
-    return plx,ply
-end
 
 """
-    pl_guess_prob_six_local_eta(G, level, step_size, fname; Alice=true, pure=true, start_grid=0.0, stop_grid=1.0, bounded=false, uniform=true, optimizer=Mosek.Optimizer)
-
-Computes Eve's guessing probability P_g^K for the 6-state QKD protocol as a function of detector efficiency η using localized objective functions.
-
-# Arguments
-- `G`: Upper bound on Eve's state guessing probability P_g^A ≤ G
-- `level`: NPA hierarchy level
-- `step_size`: Grid resolution for localization
-- `fname`: Output filename to save results
-- `Alice`: Whether to extract key from Alice's inputs (true) or Bob's outcomes (false)
-- `pure`: Whether Alice's states are pure (default: true)
-- `start_grid`: Starting point for grid generation (default: 0.0)
-- `stop_grid`: Ending point for grid generation (default: 1.0)
-- `bounded`: Whether to use bounded optimization (default: false)
-- `uniform`: Whether to use uniform grid spacing (default: true)
-- `optimizer`: Optimization solver (default: Mosek.Optimizer)
-
-# Returns
-- `(plx, ply)`: Tuple of (η values, guessing probabilities P_g^K)
-
-# Protocol Context
-Implements the enhanced 6-state protocol with localized objective functions using binary functional form (BFF) approach.
-The protocol uses 6 states at three different angles with ± variants:
-- States 1,4: Z-basis (0, π)
-- States 2,5: X-basis (π/2, 3π/2) 
-- States 3,6: (Z+X)/√2-basis (π/4, 5π/4)
-
-The localized approach decomposes the objective function into a sum of local terms that are optimized individually.
+Implements the (6,3) protocol.
+Key is always extracted from Alice's side and the states are assumed to be mixed.
 """
 function cond_entropy_six_local_eta(G,v;level="1+B*E",fname = "./plots/Guess_prob/von-neumann/eta/adapt/mixed/6Alice_",step_size=0.1,eta_start=1.0,start_grid=0.0,stop_grid=1.0,bounded=false,uniform=true,optimizer=Mosek.Optimizer)
     
+    # Adv BFF grid points
     points = grid_points(step_size;start=start_grid,stop=stop_grid,uniform=uniform)
     α,β = grid_to_coeffs(points)
     tot_points=length(points)
+
+    # Setup the monoid
     @pcmonoid M B[3,0] E[6,0] BE[7,0] 
+    # Bob and Eve's measurements commute
     @comms B E
+    # Projector constraints for Bob and Eve's measurements
     Projector.([B;E])
     build(M)
 
+    # extract the operators for the protocol
     PB=[B[1] B[2] B[3];1-B[1] 1-B[2] 1-B[3]]
     ρ = BE[1:6]
     σ = BE[7]
+
+    # Information constraints
     op_ge = [σ-1/6*ρ[x] for x in 1:6]
 
+    # Additional constraints for mixed states
     op_ge = vcat(op_ge, [ρ[x]-ρ[x]*ρ[x] for x in 1:6])
 
+    # Sweep over eta values and compute the conditional entropy H(A|E) for each eta, saving the results to the specified file path.
     plx=[eta_start-i/100 for i in 0:100]
     ply=ones(length(plx))
     fname = "$(fname)$(level)_G=$(G).txt"
 
     for i in 1:length(plx)
+        # grab the current eta value
         η=plx[i]
+
+        # Probability constraints for the protocol
         tr_eq=[[ρ[x]*PB[1,y],prob_six(1, x, y,η;v=v,bin=true )] for x in 1:6 for y in 1:3]
+        # Normalization constraints: Tr(ρₓ)=1
         tr_eq = vcat(tr_eq,[ [ ρ[x], 1] for x in 1:6])
+        # Information constraints: Eve's guessing probability P_g^A ≤ G
         tr_ge = [ [-σ, -G]]
+
         obj_val=0
+        # Compute the conditional entropy H(A|B) for the current eta and visibility where Bob doesn't bin. Used to determine when to stop the sweep (keyrate non-positive).
         cond_entropy = conditional_entropy_six_A(η;v=v,bin=false)
+
         # For 6-state protocol, we use three compatible state pairs for key generation:
         # Pair 1: states 1,4 (Z-basis) with measurement 1
         # Pair 2: states 2,5 (X-basis) with measurement 2  
@@ -392,7 +261,7 @@ function cond_entropy_six_local_eta(G,v;level="1+B*E",fname = "./plots/Guess_pro
         open(fname,"a") do file
             write(file,"$(plx[i]) $(ply[i])\n")
         end
-        if ply[i]-cond_entropy < 0.001
+        if ply[i]-cond_entropy < 0.00001
             break
         end
     end
@@ -400,17 +269,15 @@ function cond_entropy_six_local_eta(G,v;level="1+B*E",fname = "./plots/Guess_pro
 end
 
 
-function cond_entropy_six_local_visibility(G,η;fname="./plots/Guess_prob/von-neumann/visibility/adapt/mixed/6Alice_",level="1+B*E",step_size=0.1,v_start=1.0,pure=false,start_grid=0.0,stop_grid=1.0,bounded=false,uniform=true,optimizer=Mosek.Optimizer)
+function cond_entropy_six_local_visibility(G,η;fname="./plots/Guess_prob/von-neumann/visibility/adapt/mixed/6Alice_",level="1+B*E",step_size=0.1,v_start=1.0,start_grid=0.0,stop_grid=1.0,bounded=false,uniform=true,optimizer=Mosek.Optimizer)
     
     points = grid_points(step_size;start=start_grid,stop=stop_grid,uniform=uniform)
     α,β = grid_to_coeffs(points)
     tot_points=length(points)
+
     @pcmonoid M B[3,0] E[6,0] BE[7,0] 
     @comms B E
     Projector.([B;E])
-    if pure
-        Projector.(BE[1:6])
-    end
     build(M)
 
 
@@ -418,19 +285,24 @@ function cond_entropy_six_local_visibility(G,η;fname="./plots/Guess_prob/von-ne
     PB=[B[1] B[2] B[3];1-B[1] 1-B[2] 1-B[3]]
     ρ = BE[1:6]
     σ = BE[7]
+
+    # Information constraints
     op_ge = [σ-1/6*ρ[x] for x in 1:6]
 
-    if ! pure
-        op_ge = vcat(op_ge, [ρ[x]-ρ[x]*ρ[x] for x in 1:6])
-    end
+    # Additional constraints for mixed states
+    op_ge = vcat(op_ge, [ρ[x]-ρ[x]*ρ[x] for x in 1:6])
+
     plx=[v_start-i/100 for i in 0:100]
     ply=ones(length(plx))
     fname = "$(fname)$(level)_G=$(G).txt"
     for i in 1:length(plx)
+
         v=plx[i]
+
         tr_eq=[[ρ[x]*PB[1,y],prob_six(1, x, y,η;v=v,bin=true )] for x in 1:6 for y in 1:3]
         tr_eq = vcat(tr_eq,[ [ ρ[x], 1] for x in 1:6])
         tr_ge = [ [-σ, -G]]
+
         obj_val=0
         cond_entropy = conditional_entropy_six_A(η;v=v,bin=false)
         # For 6-state protocol, we use three compatible state pairs for key generation:
@@ -460,256 +332,12 @@ function cond_entropy_six_local_visibility(G,η;fname="./plots/Guess_prob/von-ne
         end
         
         ply[i]=(3+obj_val)/(3*log(2))
+
         open(fname,"a") do file
             write(file,"$(plx[i]) $(ply[i])\n")
         end
-        if ply[i]-cond_entropy < 0.001
-            break
-        end
-    end
-    return plx,ply
-end
 
-
-
-function cond_entropy_six_local_G(η,level,step_size,fname;start_G=1/3,Alice=true,pure=true,start_grid=0.0,stop_grid=1.0,bounded=false,uniform=true,optimizer=Mosek.Optimizer)
-    
-    points = grid_points(step_size;start=start_grid,stop=stop_grid,uniform=uniform)
-    α,β = grid_to_coeffs(points)
-    tot_points=length(points)
-    @pcmonoid M B[3,0] E[2,0] BE[7,0] 
-    @comms B E
-    Projector.([B;E])
-    if pure
-        Projector.(BE[1:6])
-    end
-    build(M)
-
-    PB=[B[1] B[2] B[3];1-B[1] 1-B[2] 1-B[3]]
-    ρ = BE[1:6]
-    σ = BE[7]
-    op_ge = [σ-1/6*ρ[x] for x in 1:6]
-
-    if ! pure
-        op_ge = vcat(op_ge, [ρ[x]-ρ[x]*ρ[x] for x in 1:6])
-    end
-    tr_eq=[[ρ[x]*PB[1,y],prob_six(1, x, y,η;bin=true )] for x in 1:6 for y in 1:3]
-    tr_eq = vcat(tr_eq,[ [ ρ[x], 1] for x in 1:6])
-    plx=[start_G+i/100 for i in 0:100]
-    ply=ones(length(plx))
-    for i in 1:length(plx)
-        G=plx[i]
-        tr_ge = [ [-σ, -G]]
-        obj_val=0
-        if Alice
-            cond_entropy = conditional_entropy_six_A(η;bin=false)
-            # For 6-state protocol, we use three compatible state pairs for key generation:
-            # Pair 1: states 1,4 (Z-basis) with measurement 1
-            # Pair 2: states 2,5 (X-basis) with measurement 2  
-            # Pair 3: states 3,6 ((Z+X)/√2-basis) with measurement 3
-            objs1=[obj_i_term_A([ρ[1],ρ[4]],E,α[j],β[j]) for j in 1:tot_points]  # First pair (1,4)
-            objs2=[obj_i_term_A([ρ[2],ρ[5]],E,α[j],β[j]) for j in 1:tot_points]  # Second pair (2,5)
-            objs3=[obj_i_term_A([ρ[3],ρ[6]],E,α[j],β[j]) for j in 1:tot_points]  # Third pair (3,6)
-            objs = vcat(objs1, objs2, objs3)
-        else
-            cond_entropy = conditional_entropy_six_B(η;bin=true)
-            # Bob's key extraction using all three measurement bases
-            objs1=[obj_i_term_B([ρ[1],ρ[4]],E,α[j],β[j],[PB[1,1],PB[2,1]]) for j in 1:tot_points]  # Z measurement
-            objs2=[obj_i_term_B([ρ[2],ρ[5]],E,α[j],β[j],[PB[1,2],PB[2,2]]) for j in 1:tot_points]  # X measurement
-            objs3=[obj_i_term_B([ρ[3],ρ[6]],E,α[j],β[j],[PB[1,3],PB[2,3]]) for j in 1:tot_points]  # (Z+X)/√2 measurement
-            objs = vcat(objs1, objs2, objs3)
-        end
-        for obj in objs
-            ov,model,dict,pri_mat=npa(obj,level;op_ge=op_ge,tr_eq=tr_eq,tr_ge=tr_ge,min=true,cyclic=true,normalize=false,optimizer= optimizer,list_vars=M.vertices)
-            obj_val += ov
-        end
-        ply[i]=(3+obj_val)/(3*log(2))
-        open(fname,"a") do file
-            write(file,"$(plx[i]) $(ply[i])\n")
-        end
-        if ply[i]-cond_entropy < 0.001
-            break
-        end
-    end
-    return plx,ply
-end
-
-
-function cond_entropy_six_ua_local_eta(G,level,v,fname;step_size=0.1,eta_start=1.0,Alice=true,pure=false,start_grid=0.0,stop_grid=1.0,bounded=false,uniform=true,optimizer=Mosek.Optimizer)
-    
-    points = grid_points(step_size;start=start_grid,stop=stop_grid,uniform=uniform)
-    α,β = grid_to_coeffs(points)
-    tot_points=length(points)
-    @pcmonoid M B[3,0] E[2,0] BE[7,0]
-    @comms B E
-    Projector.([B;E])
-    if pure
-        Projector.(BE[1:6])
-    end
-    build(M)
-
-    PB=[B[1] B[2] B[3];1-B[1] 1-B[2] 1-B[3]]
-    ρ = BE[1:6]
-    σ = BE[7]
-    op_ge = [σ-1/6*ρ[x] for x in 1:6]
-
-    if ! pure
-        op_ge = vcat(op_ge, [ρ[x]-ρ[x]*ρ[x] for x in 1:6])
-    end
-    plx=[eta_start-i/100 for i in 0:100]
-    ply=ones(length(plx))
-    for i in 1:length(plx)
-        η=plx[i]
-        tr_eq=[[ρ[x]*PB[1,y],prob_six(1, x, y,η ;v=v,bin=true)] for x in 1:6 for y in 1:3]
-        tr_eq = vcat(tr_eq,[ [ ρ[x], 1] for x in 1:6])
-        tr_ge = [ [-σ, -G]]
-        obj_val=0
-        if Alice
-            cond_entropy = conditional_entropy_six_A(η;v=v,bin=false)
-            # For 6-state protocol, we use three compatible state pairs for key generation:
-            # Pair 1: states 1,4 (Z-basis) with measurement 1
-            # Pair 2: states 2,5 (X-basis) with measurement 2  
-            # Pair 3: states 3,6 ((Z+X)/√2-basis) with measurement 3
-            objs=[obj_i_term_ua_A(ρ,E,α[j],β[j]) for j in 1:tot_points] 
-        else
-            cond_entropy = conditional_entropy_six_B(η;v=v,bin=true)
-            # Bob's key extraction using all three measurement bases
-            objs=[obj_i_term_ua_B(ρ,E,α[j],β[j],PB) for j in 1:tot_points]  # Z measurement
-        end
-        for obj in objs
-            ov,model,dict,pri_mat=npa(obj,level;op_ge=op_ge,tr_eq=tr_eq,tr_ge=tr_ge,min=true,cyclic=true,normalize=false,optimizer= optimizer,list_vars=M.vertices)
-            obj_val += ov
-        end
-        ply[i]=(1+obj_val)/(log(2))
-        open(fname,"a") do file
-            write(file,"$(plx[i]) $(ply[i])\n")
-        end
-        if ply[i]-cond_entropy < 0.001
-            break
-        end
-    end
-    return plx,ply
-end
-
-function cond_entropy_six_ua_local_visibility(G,level,fname;step_size=0.1,v_start=1.0,Alice=true,pure=true,start_grid=0.0,stop_grid=1.0,bounded=false,uniform=true,optimizer=Mosek.Optimizer)
-    
-    points = grid_points(step_size;start=start_grid,stop=stop_grid,uniform=uniform)
-    α,β = grid_to_coeffs(points)
-    tot_points=length(points)
-    @pcmonoid M B[3,0] E[2,0] BE[7,0]
-    @comms B E
-    Projector.([B;E])
-    if pure
-        Projector.(BE[1:6])
-    end
-    build(M)
-
-    η=1.0
-
-    PB=[B[1] B[2] B[3];1-B[1] 1-B[2] 1-B[3]]
-    ρ = BE[1:6]
-    σ = BE[7]
-    op_ge = [σ-1/6*ρ[x] for x in 1:6]
-
-    if ! pure
-        op_ge = vcat(op_ge, [ρ[x]-ρ[x]*ρ[x] for x in 1:6])
-    end
-    plx=[v_start-i/100 for i in 0:100]
-    ply=ones(length(plx))
-    for i in 1:length(plx)
-        v=plx[i]
-        tr_eq=[[ρ[x]*PB[1,y],prob_six(1, x, y,η ;v=v,bin=true)] for x in 1:6 for y in 1:3]
-        tr_eq = vcat(tr_eq,[ [ ρ[x], 1] for x in 1:6])
-        tr_ge = [ [-σ, -G]]
-        obj_val=0
-        if Alice
-            cond_entropy = conditional_entropy_six_A(η;v=v,bin=false)
-            # For 6-state protocol, we use three compatible state pairs for key generation:
-            # Pair 1: states 1,4 (Z-basis) with measurement 1
-            # Pair 2: states 2,5 (X-basis) with measurement 2  
-            # Pair 3: states 3,6 ((Z+X)/√2-basis) with measurement 3
-            objs=[obj_i_term_ua_A(ρ,E,α[j],β[j]) for j in 1:tot_points] 
-        else
-            cond_entropy = conditional_entropy_six_B(η;v=v,bin=true)
-            # Bob's key extraction using all three measurement bases
-            objs=[obj_i_term_ua_B(ρ,E,α[j],β[j],PB) for j in 1:tot_points]  # Z measurement
-        end
-        ops,ops_principal=basis_gen(objs[1],level,[],op_ge,tr_eq,tr_ge,M.vertices,-1)
-        model,S,V,mons,LMI = PCPOP.npa_dual(0,ops,ops_principal;op_ge=op_ge,tr_eq=tr_eq,tr_ge=tr_ge,min=true,tracial=true,normalize=false,change_objective=true,progress=true)
-
-        old_obj=0
-        for obj in objs
-            S = S+old_obj-obj
-            model,V = model_new_obj(model,S,V,mons,LMI,-1)
-            set_optimizer(model, optimizer)
-
-            optimize!(model)
-            ovi = objective_value(model)
-            old_obj = obj
-            obj_val += ovi
-        end
-        ply[i]=(1+obj_val)/(log(2))
-        open(fname,"a") do file
-            write(file,"$(plx[i]) $(ply[i])\n")
-        end
-        if ply[i]-cond_entropy < 0.001
-            break
-        end
-    end
-    return plx,ply
-end
-
-
-function cond_entropy_six_ua_local_G(η,level,step_size,fname;start_G=1/3,Alice=true,pure=true,start_grid=0.0,stop_grid=1.0,bounded=false,uniform=true,optimizer=Mosek.Optimizer)
-    
-    points = grid_points(step_size;start=start_grid,stop=stop_grid,uniform=uniform)
-    α,β = grid_to_coeffs(points)
-    tot_points=length(points)
-    @pcmonoid M B[3,0] E[2,0] BE[7,0]
-    @comms B E
-    Projector.([B;E])
-    if pure
-        Projector.(BE[1:6])
-    end
-    build(M)
-
-    PB=[B[1] B[2] B[3];1-B[1] 1-B[2] 1-B[3]]
-    ρ = BE[1:6]
-    σ = BE[7]
-    op_ge = [σ-1/6*ρ[x] for x in 1:6]
-
-    if ! pure
-        op_ge = vcat(op_ge, [ρ[x]-ρ[x]*ρ[x] for x in 1:6])
-    end
-    tr_eq=[[ρ[x]*PB[1,y],prob_six(1, x, y,η ;bin=true)] for x in 1:6 for y in 1:3]
-    tr_eq = vcat(tr_eq,[ [ ρ[x], 1] for x in 1:6])
-    plx=[start_G+i/100 for i in 0:100]
-    ply=ones(length(plx))
-    for i in 1:length(plx)
-        G=plx[i]
-        tr_ge = [ [-σ, -G]]
-        obj_val=0
-        if Alice
-            cond_entropy = conditional_entropy_six_A(η;bin=false)
-            # For 6-state protocol, we use three compatible state pairs for key generation:
-            # Pair 1: states 1,4 (Z-basis) with measurement 1
-            # Pair 2: states 2,5 (X-basis) with measurement 2  
-            # Pair 3: states 3,6 ((Z+X)/√2-basis) with measurement 3
-            objs=[obj_i_term_ua_A(ρ,E,α[j],β[j]) for j in 1:tot_points] 
-        else
-            cond_entropy = conditional_entropy_six_B(η;bin=true)
-            # Bob's key extraction using all three measurement bases
-            objs=[obj_i_term_ua_B(ρ,E,α[j],β[j],PB) for j in 1:tot_points]  # Z measurement
-        end
-        for obj in objs
-            ov,model,dict,pri_mat=npa(obj,level;op_ge=op_ge,tr_eq=tr_eq,tr_ge=tr_ge,min=true,cyclic=true,normalize=false,optimizer= optimizer,list_vars=M.vertices)
-            obj_val += ov
-        end
-        ply[i]=(1+obj_val)/(log(2))
-        open(fname,"a") do file
-            write(file,"$(plx[i]) $(ply[i])\n")
-        end
-        if ply[i]-cond_entropy < 0.001
+        if ply[i]-cond_entropy < 0.00001
             break
         end
     end

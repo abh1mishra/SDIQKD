@@ -10,8 +10,27 @@ function obj_i_term_A(ρ,Pi,αi,βi)
 end
 
 
-# Key is always extracted from Alice's side
-function cond_entropy_four_local_eta(G,v;fname="./plots/Guess_prob/von_neumann/eta/",level="1+B*E",step_size=0.1,eta_start=1,start_grid=0.0,stop_grid=1.0,uniform=true,optimizer=Mosek.Optimizer)
+"""
+    Implements the (4,2) protocol.
+
+    The below function computes the conditional entropy H(A|E) for a given guessing probability G and visibility v, while sweeping over the parameter eta.
+    The results are saved to a specified file path :fname.
+    Key is always extracted from Alice's side.
+    It localizes the objective function to save resources.
+
+    Arguments:
+    - G: Guessing probability.
+    - v: Visibility parameter.
+    - fname: File path to save the results (default: "./plots/Guess_prob/von_neumann/eta/").
+    - level: Level of the NPA hierarchy (default: "1+B*E").
+    - step_size: Step size for the grid points (default: 0.1).
+    - eta_start: Starting value for eta (default: 1).
+    - start_grid: Starting value for the grid (default: 0.0).
+    - stop_grid: Stopping value for the grid (default: 1.0).
+    - uniform: Whether to use uniform grid points (default: true).
+    - optimizer: Optimizer to use (default: Mosek.Optimizer).
+"""
+ function cond_entropy_four_local_eta(G,v;fname="./plots/Guess_prob/von_neumann/eta/",level="1+B*E",step_size=0.1,eta_start=1,start_grid=0.0,stop_grid=1.0,uniform=true,optimizer=Mosek.Optimizer)
     # protoocol parameters
     nstates = 4
     nmeas=2
@@ -24,20 +43,22 @@ function cond_entropy_four_local_eta(G,v;fname="./plots/Guess_prob/von_neumann/e
 
     # Setup the monoid
     @pcmonoid M B[nmeas,0] E[2,0] BE[nstates+1,0] 
+    #  Bob and Eve's measurements commute
     @comms B E
+    # Projector constraints for Bob and Eve's measurements
     Projector.([B;E])
     build(M)
 
-    # extract the operators for the prtocol
-    PB=[B[1] B[2];1-B[1] 1-B[2]]  # Bob's 4 measurements
-    ρ = BE[1:nstates]  # Alice's 4 quantum states
+    # extract the operators for the protocol
+    PB=[B[1] B[2];1-B[1] 1-B[2]]  # Bob's 2 measurements (2 outcomes each)
+    ρ = BE[1:nstates]  # Alice's quantum states
     σ = BE[end]    # Auxiliary operator for guessing constraint
 
     # Information constraints
     op_ge = [σ-(1/nstates)*ρ[x] for x in 1:nstates]
     tr_ge = [ [-σ, -G]]
     
-    # Additional constraints for non-pure states
+    # Additional constraints for mixed states
     op_ge = vcat(op_ge, [ρ[x]-ρ[x]*ρ[x] for x in 1:nstates])
 
     # parameter sweep over eta
@@ -53,6 +74,7 @@ function cond_entropy_four_local_eta(G,v;fname="./plots/Guess_prob/von_neumann/e
         # Normalization constraints: Tr(ρₓ)=1
         tr_eq = vcat(tr_eq,[ [ ρ[x], 1] for x in 1:nstates])
 
+        # Compute the conditional entropy H(A|B) for the current eta and visibility where Bob doesn't bin. Used to determine when to stop the sweep (keyrate non-positive).
         cond_entropy = conditional_entropy_four_A(η;v=v,bin=false)
 
         objs=[obj_i_term_A(ρ[1:2],E,α[i],β[i]) for i in 1:tot_points]
@@ -61,7 +83,7 @@ function cond_entropy_four_local_eta(G,v;fname="./plots/Guess_prob/von_neumann/e
         ops,ops_principal=basis_gen(objs[1],level,[],op_ge,tr_eq,tr_ge,M.vertices,-1)
         model,S,V,mons,LMI = npa_dual(0,ops,ops_principal;op_ge=op_ge,tr_eq=tr_eq,tr_ge=tr_ge,min=true,tracial=true,normalize=false,change_objective=true,progress=true)
 
-        # iterate thr objectives and update the model for each one and optimize
+        # iterate through the objectives and update the model for each one and optimize
         obj_val=0
         old_obj=0
         for obj in objs
@@ -91,7 +113,8 @@ function cond_entropy_four_local_eta(G,v;fname="./plots/Guess_prob/von_neumann/e
 end
 
 
-# Key is always extracted from Alice's side
+# The below function computes the conditional entropy H(A|E) for a given guessing probability G and detection efficiency η, while sweeping over the parameter visibility.
+# Key is always extracted from Alice's side.
 function cond_entropy_four_local_visibility(G,η;fname="./plots/Guess_prob/von_neumann/visibility/",level="1+B*E",step_size=0.1,v_start=1,start_grid=0.0,stop_grid=1.0,uniform=true,optimizer=Mosek.Optimizer)
     # protoocol parameters
     nstates = 4
@@ -142,7 +165,7 @@ function cond_entropy_four_local_visibility(G,η;fname="./plots/Guess_prob/von_n
         ops,ops_principal=basis_gen(objs[1],level,[],op_ge,tr_eq,tr_ge,M.vertices,-1)
         model,S,V,mons,LMI = npa_dual(0,ops,ops_principal;op_ge=op_ge,tr_eq=tr_eq,tr_ge=tr_ge,min=true,tracial=true,normalize=false,change_objective=true,progress=true)
 
-        # iterate thr objectives and update the model for each one and optimize
+        # iterate through objectives and update the model for each one and optimize
         obj_val=0
         old_obj=0
         for obj in objs
