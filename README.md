@@ -1,13 +1,20 @@
 # SDIQKD
 Code for SDI-QKD project on restricted information assumption
 
+## Dependencies
+
+- PCPOP.jl: https://github.com/abh1mishra/PCPOP.jl
+- Mosek.jl: https://github.com/MOSEK/Mosek.jl
+- MosekTools.jl: https://github.com/jump-dev/MosekTools.jl
+- JuMP.jl: https://github.com/jump-dev/JuMP.jl
+
 ---
 
 # `RI_bff_adv.jl`: entropy bounds under the restricted-information assumption
 
-This section documents `two_meas/RI_bff_adv.jl` and `four_meas/RI_bff_adv.jl`. It assumes familiarity with PCPOP.jl (`@pcmonoid`, `@comms`, `Projector`, `basis_gen`, `npa_dual`, `model_new_obj`). It explains how each physical object and constraint of the paper's RI optimization maps to a Julia variable and a PCPOP call.
+This section documents `two_meas/RI_bff_adv.jl`, `three_meas/RI_bff_adv.jl` and `four_meas/RI_bff_adv.jl`. It assumes familiarity with PCPOP.jl (`@pcmonoid`, `@comms`, `Projector`, `basis_gen`, `npa_dual`, `model_new_obj`). It explains how each physical object and constraint of the paper's RI optimization maps to a Julia variable and a PCPOP call.
 
-All six public functions in the two files run **the same pipeline with the same variable names**. They differ only in a few protocol constants (number of states, measurements and key bases) and in which physical parameter is swept. The pipeline is therefore described once, followed by a table of the per-function constants.
+All ten public functions in the three files run **the same pipeline with the same variable names**. They differ only in a few protocol constants (number of states, measurements and key bases) and in which physical parameter is swept. The pipeline is therefore described once, followed by a table of the per-function constants. A few `three_meas` functions deviate in small ways (options, solver call, file naming); these are listed in [§2](#2-functions-and-protocol-constants).
 
 **Notation.** ρₓ = Alice's state for input x, M_{b|y} = Bob's projector for outcome b of measurement y, P_{a,k} = Eve's projector for key value a at grid node k, σ = auxiliary operator, Tr = trace, 𝟙 = identity, ⊗ = tensor product.
 
@@ -63,34 +70,57 @@ The key rate reported in the plots is r = H(A|E) − H(A|B). The functions compu
 
 | File | Function | Protocol (states, meas.) | Swept | Fixed |
 |---|---|---|---|---|
-| `two_meas/RI_bff_adv.jl` | `cond_entropy_four_local_eta` | (4,2) | η | `G`, `v` |
-| `two_meas/RI_bff_adv.jl` | `cond_entropy_four_local_visibility` | (4,2) | v | `G`, `η` |
-| `four_meas/RI_bff_adv.jl` | `cond_entropy_four_local_eta` | (4,4) | η | `G`, `v` |
-| `four_meas/RI_bff_adv.jl` | `cond_entropy_four_local_visibility` | (4,4) | v | `G`, `η` |
-| `four_meas/RI_bff_adv.jl` | `cond_entropy_six_local_eta` | (6,4) | η | `G`, `v` |
-| `four_meas/RI_bff_adv.jl` | `cond_entropy_six_local_visibility` | (6,4) | v | `G`, `η` |
+| `two_meas/RI_bff_adv.jl` | `cond_entropy_four_local_eta(G, v; …)` | (4,2) | η | `G`, `v` |
+| `two_meas/RI_bff_adv.jl` | `cond_entropy_four_local_visibility(G, η; …)` | (4,2) | v | `G`, `η` |
+| `three_meas/RI_bff_adv.jl` | `cond_entropy_four_local_eta(G, v, fname; …)` | (4,3) | η | `G`, `v` |
+| `three_meas/RI_bff_adv.jl` | `cond_entropy_four_local_visibility(G, η, fname; …)` | (4,3) | v | `G`, `η` |
+| `three_meas/RI_bff_adv.jl` | `cond_entropy_six_local_eta(G, v; …)` | (6,3) | η | `G`, `v` |
+| `three_meas/RI_bff_adv.jl` | `cond_entropy_six_local_visibility(G, η; …)` | (6,3) | v | `G`, `η` |
+| `four_meas/RI_bff_adv.jl` | `cond_entropy_four_local_eta(G, v; …)` | (4,4) | η | `G`, `v` |
+| `four_meas/RI_bff_adv.jl` | `cond_entropy_four_local_visibility(G, η; …)` | (4,4) | v | `G`, `η` |
+| `four_meas/RI_bff_adv.jl` | `cond_entropy_six_local_eta(G, v; …)` | (6,4) | η | `G`, `v` |
+| `four_meas/RI_bff_adv.jl` | `cond_entropy_six_local_visibility(G, η; …)` | (6,4) | v | `G`, `η` |
 
 The only places where the functions differ:
 
-| Constant | (4,2) `two_meas` | (4,4) `four_meas`, `four_*` | (6,4) `four_meas`, `six_*` |
-|---|---|---|---|
-| `nstates` | 4 | 4 | 6 |
-| `nmeas` | 2 | 4 | 4 |
-| key bases n_b (`nbasis`) | 1 (implicit) | 2 | 3 |
-| Eve's projectors `E` | `E[2,0]` | `E[2*nbasis,0]` = 4 | `E[2*nbasis,0]` = 6 |
-| Key-basis pairs → Eve projectors | (ρ₁,ρ₂)→`E[1:2]` | (ρ₁,ρ₂)→`E[1:2]`, (ρ₃,ρ₄)→`E[3:4]` | (ρ₁,ρ₄)→`E[1:2]`, (ρ₂,ρ₅)→`E[3:4]`, (ρ₃,ρ₆)→`E[5:6]` |
-| Honest statistics | `prob_four` | `prob_four` | `prob_six` |
-| H(A\|B) | `conditional_entropy_four_A` | `conditional_entropy_four_A` (avg. over 2 bases) | `conditional_entropy_six_A` (avg. over 3 bases) |
-| Entropy formula | `(1+obj_val)/log(2)` | `(2+obj_val)/(2*log(2))` | `(3+obj_val)/(3*log(2))` |
-| Stop tolerance | 1e-6 | 1e-5 (η), 1e-6 (v) | 1e-5 (η), 1e-3 (v) |
-| `pure` keyword | not available (always mixed) | available, default `false` | available, default `false` |
+| Constant | (4,2) `two_meas` | (4,3) `three_meas`, `four_*` | (6,3) `three_meas`, `six_*` | (4,4) `four_meas`, `four_*` | (6,4) `four_meas`, `six_*` |
+|---|---|---|---|---|---|
+| `nstates` | 4 | 4 (literal) | 6 (literal) | 4 | 6 |
+| `nmeas` | 2 | 3 (literal) | 3 (literal) | 4 | 4 |
+| Monoid | `B[2,0] E[2,0] BE[5,0]` | `B[3,0] E[2,0] BE[5,0]` | `B[3,0] E[6,0] BE[7,0]` | `B[4,0] E[4,0] BE[5,0]` | `B[4,0] E[6,0] BE[7,0]` |
+| key bases n_b | 1 | 1 | 3 | 2 | 3 |
+| Key-basis pairs → Eve projectors | (ρ₁,ρ₂)→`E[1:2]` | (ρ₁,ρ₂)→`E[1:2]` | (ρ₁,ρ₄)→`E[1:2]`, (ρ₂,ρ₅)→`E[3:4]`, (ρ₃,ρ₆)→`E[5:6]` | (ρ₁,ρ₂)→`E[1:2]`, (ρ₃,ρ₄)→`E[3:4]` | (ρ₁,ρ₄)→`E[1:2]`, (ρ₂,ρ₅)→`E[3:4]`, (ρ₃,ρ₆)→`E[5:6]` |
+| Honest statistics | `prob_four` | `prob_four` | `prob_six` | `prob_four` | `prob_six` |
+| H(A\|B) | `conditional_entropy_four_A` | `conditional_entropy_four_A` (Z basis only) | `conditional_entropy_six_A` (avg. over 3 bases) | `conditional_entropy_four_A` (avg. over 2 bases) | `conditional_entropy_six_A` (avg. over 3 bases) |
+| Entropy formula | `(1+obj_val)/log(2)` | `(1+obj_val)/log(2)` | `(3+obj_val)/(3*log(2))` | `(2+obj_val)/(2*log(2))` | `(3+obj_val)/(3*log(2))` |
+| Stop tolerance | 1e-6 | 1e-5 | 1e-5 | 1e-5 (η), 1e-6 (v) | 1e-5 (η), 1e-3 (v) |
+| `pure` keyword | not available | `_eta`: accepted but ignored (always mixed); `_visibility`: default **`true`** | not available (always mixed) | default `false` | default `false` |
+| `Alice` keyword | — | default `true` (see below) | — | — | — |
+| Output path | `fname` + `v=…/` or `eta=…/` + `4Alice_<level>_G=<G>.txt` | `fname` **is** the full file path | `fname` + `<level>_G=<G>.txt` (G not rounded) | as `two_meas` | as `two_meas`, `6Alice_…` |
+
+### `three_meas` deviations from the common pipeline
+
+The `three_meas` functions follow the same stages as the others (see [§3](#3-pipeline)), with these differences:
+
+- **Constants are literals.** Values are written directly (e.g. `B[3,0]`, `ρ = BE[1:4]`, `σ = BE[5]`, `σ - 0.25*ρ[x]`, `σ - 1/6*ρ[x]`) instead of the named `nstates` / `nmeas` / `nbasis`.
+- **`fname` is positional in the four-state functions.** `cond_entropy_four_local_*(G, v_or_η, fname; …)` takes `fname` as the complete output file path. Nothing is appended to it and no directory is created.
+- **The six-state functions build the file name from a prefix.** They use `fname = "$(fname)$(level)_G=$(G).txt"`, with defaults `./plots/Guess_prob/von-neumann/eta/adapt/mixed/6Alice_` and `./plots/Guess_prob/von-neumann/visibility/adapt/mixed/6Alice_`. Note `von-neumann`, not `von_neumann`.
+- **`Alice` keyword (four-state functions only).**
+  - `Alice=true` (default): the key comes from Alice's bit, via `obj_i_term_A` and `conditional_entropy_four_A(…; bin=false)`.
+  - `Alice=false`: the key comes from Bob's Z outcome, via `obj_i_term_B(ρ[1:2], E, α_k, β_k, [PB[1,1], PB[2,1]])` and `conditional_entropy_four_B(…; bin=true)`. That is H(B|E) with the H(B|A) stopping rule.
+- **`pure` defaults differ between the two four-state functions.**
+  - `cond_entropy_four_local_visibility` defaults to `pure=true`. It then imposes `Projector.(BE[1:4])` and omits ρₓ − ρₓ² ≥ 0. Pass `pure=false` to reproduce the `mixed` data.
+  - `cond_entropy_four_local_eta` accepts `pure` but always uses mixed states.
+- **Solver call in `cond_entropy_four_local_eta`.** It calls `npa(obj, level; …, list_vars=M.vertices)` separately for every grid node, rebuilding the SDP each time, instead of building once with `basis_gen` + `npa_dual` and swapping objectives with `model_new_obj` (Stages 9–10). This is slower, because the SDP is rebuilt for every node. The other three `three_meas` functions use `npa_dual` / `model_new_obj`.
+- **Unused keyword.** The six-state functions accept `bounded`, which is not used.
 
 Shared helpers (defined at the top of each file):
 
-- `obj_i_term_A(ρ, Pi, αi, βi)`: the BFF objective for **one** key basis and **one** grid node (see [Stage 8](#stage-8-objective-polynomials)).
-- `obj_i_term_ua_A(...)` (`four_meas` only): the non-adaptive objective. It is not called by the six functions above.
+- `obj_i_term_A(ρ, Pi, αi, βi)` (all files): the BFF objective for **one** key basis and **one** grid node, with key from Alice (see [Stage 8](#stage-8-objective-polynomials)).
+- `obj_i_term_B(ρ, Pi, αi, βi, M)` (`three_meas` only): the same with the key from Bob's outcome. The α-term is `Pi[a]*(ρ[1]+ρ[2])*M[a]` with `M = [M_{1|1}, M_{2|1}]`.
+- `obj_i_term_ua_A(...)` (`four_meas` only): the non-adaptive objective. It is not called by the functions above.
 
-External dependencies: `grid_points` and `grid_to_coeffs` in `utils.jl`, and the honest-model functions in `two_meas_corr.jl` / `four_meas_corr.jl`.
+External dependencies: `grid_points` and `grid_to_coeffs` in `utils.jl`, and the honest-model functions in `two_meas_corr.jl` / `three_meas_corr.jl` / `four_meas_corr.jl`.
 
 ---
 
@@ -398,15 +428,17 @@ Every function uses these names with the same meaning.
 
 ## 7. State and measurement conventions
 
-Defined in `two_meas/two_meas_corr.jl` and `four_meas/four_meas_corr.jl`.
+Defined in `two_meas/two_meas_corr.jl`, `three_meas/three_meas_corr.jl` and `four_meas/four_meas_corr.jl`.
 
 | Protocol | States `x` | Measurements `y` | Key (states; setting) |
 |---|---|---|---|
 | (4,2) | 1 → \|0⟩, 2 → \|1⟩, 3 → \|+⟩, 4 → \|−⟩ | 1 → Z, 2 → π/8 | (1,2; y=1) |
+| (4,3) | as (4,2) | 1 → Z, 2 → +π/8, 3 → −π/8 | (1,2; y=1) |
+| (6,3) | 1, 2, 3 → \|0⟩, \|+⟩, \|π/8⟩; 4, 5, 6 → orthogonal partners | 1 → Z, 2 → X, 3 → π/8 | (1,4; y=1), (2,5; y=2), (3,6; y=3) |
 | (4,4) | as (4,2) | 1 → Z, 2 → +π/8, 3 → −π/8, 4 → X | (1,2; y=1), (3,4; y=4) |
 | (6,4) | 1, 2, 3 → \|0⟩, \|+⟩, \|π/8⟩; 4, 5, 6 → orthogonal partners | 1 → Z, 2 → X, 3 → +π/8, 4 → −π/8 | (1,4; y=1), (2,5; y=2), (3,6; y=3) |
 
-The index of the X measurement differs between `povm_four` (y = 4) and `povm_six` (y = 2).
+The index of the X measurement differs between `povm_four` (y = 4, `four_meas` only) and `povm_six` (y = 2).
 
 ---
 
@@ -425,6 +457,8 @@ Default locations (relative to the script directory):
 | File | `*_eta` | `*_visibility` |
 |---|---|---|
 | `two_meas` | `plots/Guess_prob/von_neumann/eta/v=<v>/4Alice_<level>_G=<G>.txt` | `plots/Guess_prob/von_neumann/visibility/eta=<η>/4Alice_<level>_G=<G>.txt` |
+| `three_meas` (4,3) | `fname` (positional, full path) | `fname` (positional, full path) |
+| `three_meas` (6,3) | `plots/Guess_prob/von-neumann/eta/adapt/mixed/6Alice_<level>_G=<G>.txt` | `plots/Guess_prob/von-neumann/visibility/adapt/mixed/6Alice_<level>_G=<G>.txt` |
 | `four_meas` (4,4) | `plots/Guess_prob/von_neumann/eta/adapt/v=<v>/4Alice_…` | `plots/Guess_prob/von_neumann/visibility/adapt/eta=<η>/4Alice_…` |
 | `four_meas` (6,4) | `plots/Guess_prob/von_neumann/eta/adapt/v=<v>/6Alice_…` | `plots/Guess_prob/von_neumann/visibility/adapt/eta=<η>/6Alice_…` |
 
