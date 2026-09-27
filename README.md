@@ -9,6 +9,8 @@ This section documents `two_meas/RI_bff_adv.jl` and `four_meas/RI_bff_adv.jl`. I
 
 All six public functions in the two files run **the same pipeline with the same variable names**. They differ only in a few protocol constants (number of states, measurements and key bases) and in which physical parameter is swept. The pipeline is therefore described once, followed by a table of the per-function constants.
 
+**Notation.** ρₓ = Alice's state for input x, M_{b|y} = Bob's projector for outcome b of measurement y, P_{a,k} = Eve's projector for key value a at grid node k, σ = auxiliary operator, Tr = trace, 𝟙 = identity, ⊗ = tensor product.
+
 ## Contents
 
 1. [Physical problem](#1-physical-problem)
@@ -24,38 +26,36 @@ All six public functions in the two files run **the same pipeline with the same 
 
 ## 1. Physical problem
 
-Alice prepares one of `nstates` states $\rho_x$ with uniform prior $p_x = 1/\text{nstates}$. Bob performs one of `nmeas` binary measurements $\{M_{b|y}\}$ with detection efficiency $\eta$. The honest states have visibility $v$.
+Alice prepares one of `nstates` states ρₓ with uniform prior pₓ = 1/nstates. Bob performs one of `nmeas` binary measurements {M_{b|y}} with detection efficiency η. The honest states have visibility v.
 
-The device is characterized only by the **restricted-information (RI)** assumption: an upper bound $G$ on the probability of guessing $x$ from the prepared state,
+The device is characterized only by the **restricted-information (RI)** assumption: an upper bound G on the probability of guessing x from the prepared state,
 
-$$
-P_g^A=\max_{\{N_x\}}\sum_x p_x\operatorname{Tr}(\rho_x N_x)\le G .
-$$
+```text
+P_g^A = max over POVMs {Nₓ} of  Σₓ pₓ Tr(ρₓ Nₓ)  ≤  G
+```
 
-The key is extracted from Alice's bit $a$ in one or more *key bases*. Each key basis is a pair of states $(\rho_{x_1},\rho_{x_2})$ encoding $a=1,2$, measured by Bob with a fixed setting $y$. The functions return a lower bound on $H(A|E)$ computed with the BFF-type relaxation
+The key is extracted from Alice's bit a in one or more *key bases*. Each key basis is a pair of states (ρ_{x1}, ρ_{x2}) encoding a = 1, 2, measured by Bob with a fixed setting y. The functions return a lower bound on H(A|E) computed with the BFF-type relaxation
 
-$$
-H(A|E)\;\ge\;\frac{1}{\ln 2}\Big[\operatorname{Tr}(\mathbb 1_A\otimes\rho_E-\rho_{AE})
-+\sum_{k}\inf\operatorname{Tr}\big(P_k(\alpha_k\rho_{AE}+\beta_k\,\mathbb 1_A\otimes\rho_E)\big)\Big].
-$$
+```text
+H(A|E)  ≥  (1/ln 2) · [ Tr(𝟙_A ⊗ ρ_E − ρ_AE)  +  Σ_k  inf Tr( P_k (α_k ρ_AE + β_k 𝟙_A ⊗ ρ_E) ) ]
+```
 
-In the tracial formulation, each term $k$ is the non-commutative polynomial optimization
+In the tracial formulation, each term k is the non-commutative polynomial optimization
 
-$$
-\begin{aligned}
-\inf_{\rho_x,\,M_{b|y},\,P_{a,k},\,\sigma}\quad & \operatorname{Tr}F_k \\
-\text{s.t.}\quad
-&\rho_x-\rho_x^2\ge 0,\qquad \operatorname{Tr}\rho_x=1 &&\text{(valid, possibly mixed, states)}\\
-&\sigma-p_x\rho_x\ge 0,\qquad \operatorname{Tr}\sigma\le G &&\text{(RI: } P_g^A\le\operatorname{Tr}\sigma\le G)\\
-&M_{b|y}^2=M_{b|y},\qquad \textstyle\sum_b M_{b|y}=\mathbb 1 &&\text{(projective measurements)}\\
-&\operatorname{Tr}(\rho_x M_{b|y})=p(b|x,y) &&\text{(observed statistics)}\\
-&P_{a,k}^2=P_{a,k},\qquad [P_{a,k},M_{b|y}]=0 &&\text{(Eve's BFF projectors)}
-\end{aligned}
-$$
+```text
+minimize over ρₓ, M_{b|y}, P_{a,k}, σ :   Tr F_k
+
+subject to
+    ρₓ − ρₓ² ≥ 0,   Tr ρₓ = 1                      (valid, possibly mixed, states)
+    σ − pₓ ρₓ ≥ 0,  Tr σ ≤ G                        (RI:  P_g^A ≤ Tr σ ≤ G)
+    M_{b|y}² = M_{b|y},  Σ_b M_{b|y} = 𝟙            (projective measurements)
+    Tr(ρₓ M_{b|y}) = p(b|x,y)                       (observed statistics)
+    P_{a,k}² = P_{a,k},  [P_{a,k}, M_{b|y}] = 0     (Eve's BFF projectors)
+```
 
 This is relaxed to an SDP by `PCPOP.npa_dual(...; tracial=true)`.
 
-The key rate reported in the plots is $r=H(A|E)-H(A|B)$. The functions compute and store only $H(A|E)$. They compute $H(A|B)$ only to decide when to stop the sweep.
+The key rate reported in the plots is r = H(A|E) − H(A|B). The functions compute and store only H(A|E). They compute H(A|B) only to decide when to stop the sweep.
 
 ---
 
@@ -76,18 +76,18 @@ The only places where the functions differ:
 |---|---|---|---|
 | `nstates` | 4 | 4 | 6 |
 | `nmeas` | 2 | 4 | 4 |
-| key bases $n_b$ (`nbasis`) | 1 (implicit) | 2 | 3 |
+| key bases n_b (`nbasis`) | 1 (implicit) | 2 | 3 |
 | Eve's projectors `E` | `E[2,0]` | `E[2*nbasis,0]` = 4 | `E[2*nbasis,0]` = 6 |
 | Key-basis pairs → Eve projectors | (ρ₁,ρ₂)→`E[1:2]` | (ρ₁,ρ₂)→`E[1:2]`, (ρ₃,ρ₄)→`E[3:4]` | (ρ₁,ρ₄)→`E[1:2]`, (ρ₂,ρ₅)→`E[3:4]`, (ρ₃,ρ₆)→`E[5:6]` |
 | Honest statistics | `prob_four` | `prob_four` | `prob_six` |
-| $H(A\|B)$ | `conditional_entropy_four_A` | `conditional_entropy_four_A` (avg. over 2 bases) | `conditional_entropy_six_A` (avg. over 3 bases) |
+| H(A\|B) | `conditional_entropy_four_A` | `conditional_entropy_four_A` (avg. over 2 bases) | `conditional_entropy_six_A` (avg. over 3 bases) |
 | Entropy formula | `(1+obj_val)/log(2)` | `(2+obj_val)/(2*log(2))` | `(3+obj_val)/(3*log(2))` |
 | Stop tolerance | 1e-6 | 1e-5 (η), 1e-6 (v) | 1e-5 (η), 1e-3 (v) |
 | `pure` keyword | not available (always mixed) | available, default `false` | available, default `false` |
 
 Shared helpers (defined at the top of each file):
 
-- `obj_i_term_A(ρ, Pi, αi, βi)`: the BFF objective for **one** key basis and **one** grid node (see [Stage 8](#stage-8--objective-polynomials)).
+- `obj_i_term_A(ρ, Pi, αi, βi)`: the BFF objective for **one** key basis and **one** grid node (see [Stage 8](#stage-8-objective-polynomials)).
 - `obj_i_term_ua_A(...)` (`four_meas` only): the non-adaptive objective. It is not called by the six functions above.
 
 External dependencies: `grid_points` and `grid_to_coeffs` in `utils.jl`, and the honest-model functions in `two_meas_corr.jl` / `four_meas_corr.jl`.
@@ -149,8 +149,8 @@ points = grid_points(step_size; start=start_grid, stop=stop_grid, uniform=unifor
 tot_points = length(points)
 ```
 
-- `points` are the quadrature nodes $t_k\in[0,1]$ of the entropy relaxation. `uniform=true` gives an equally spaced grid. `uniform=false` gives nodes spaced by $\sqrt{\epsilon\,t}$, with `step_size` = $\epsilon$.
-- `α[k]`, `β[k]` are the corresponding weights $\alpha_k,\beta_k$. `grid_to_coeffs` assumes `start_grid = 0` and `stop_grid = 1`.
+- `points` are the quadrature nodes t_k ∈ [0, 1] of the entropy relaxation. `uniform=true` gives an equally spaced grid. `uniform=false` gives nodes spaced by √(ε·t), with `step_size` = ε.
+- `α[k]`, `β[k]` are the corresponding weights α_k, β_k. `grid_to_coeffs` assumes `start_grid = 0` and `stop_grid = 1`.
 - `tot_points` is the number of SDPs solved per sweep point. It controls both the tightness of the bound and the run time.
 
 ### Stage 3: Operator algebra
@@ -167,15 +167,15 @@ build(M)
 
 | PCPOP call | Physical meaning |
 |---|---|
-| `B[nmeas,0]` | `nmeas` Hermitian letters. `B[y]` is Bob's outcome-1 projector $M_{1\|y}$. |
-| `E[2*nbasis,0]` | Eve's BFF projectors $P^{(r)}_{a,k}$: two per key basis $r$ (one per key value $a$). The same letters are reused for every grid node $k$, which is valid because each $k$ is a separate SDP. |
-| `BE[nstates+1,0]` | Letters that commute with neither `B` nor `E`: the states $\rho_x$ and the auxiliary operator $\sigma$. The name `BE` is only a group label. |
-| `@comms B E` | $[P_{a,k},M_{b\|y}]=0$. Eve's and Bob's operators act on different subsystems. |
-| `Projector.([B;E])` | $M_{b\|y}^2=M_{b\|y}$, $P_{a,k}^2=P_{a,k}$ (encoded as `:Projector` multiplication type in the graph-product monoid). |
-| `Projector.(BE[1:nstates])` | Optional (`pure=true`, four_meas only): pure states $\rho_x^2=\rho_x$. |
+| `B[nmeas,0]` | `nmeas` Hermitian letters. `B[y]` is Bob's outcome-1 projector M_{1\|y}. |
+| `E[2*nbasis,0]` | Eve's BFF projectors P⁽ʳ⁾_{a,k}: two per key basis r (one per key value a). The same letters are reused for every grid node k, which is valid because each k is a separate SDP. |
+| `BE[nstates+1,0]` | Letters that commute with neither `B` nor `E`: the states ρₓ and the auxiliary operator σ. The name `BE` is only a group label. |
+| `@comms B E` | [P_{a,k}, M_{b\|y}] = 0. Eve's and Bob's operators act on different subsystems. |
+| `Projector.([B;E])` | M_{b\|y}² = M_{b\|y}, P_{a,k}² = P_{a,k} (encoded as `:Projector` multiplication type in the graph-product monoid). |
+| `Projector.(BE[1:nstates])` | Optional (`pure=true`, four_meas only): pure states ρₓ² = ρₓ. |
 | `build(M)` | Freezes the monoid. No further commutation or projector rules can be added after this. |
 
-No relation is imposed on $\sigma$. It is a generic Hermitian letter, constrained only through `op_ge` and `tr_ge`.
+No relation is imposed on σ. It is a generic Hermitian letter, constrained only through `op_ge` and `tr_ge`.
 
 ### Stage 4: Physical operators
 
@@ -185,7 +185,7 @@ PB = [B[1] B[2] B[3] B[4]; 1-B[1] 1-B[2] 1-B[3] 1-B[4]]   # PB[b,y] = M_{b|y}
 σ  = BE[end]                                             # σ
 ```
 
-- Each binary measurement is parameterized by its outcome-1 projector. Outcome 2 is `1-B[y]`, so completeness $\sum_b M_{b|y}=\mathbb 1$ and orthogonality $M_{1|y}M_{2|y}=0$ hold by construction.
+- Each binary measurement is parameterized by its outcome-1 projector. Outcome 2 is `1-B[y]`, so completeness Σ_b M_{b|y} = 𝟙 and orthogonality M_{1|y} M_{2|y} = 0 hold by construction.
 - The states are unconstrained operators at this point. They become density operators through the constraints of stages 5 and 6.
 
 ### Stage 5: Fixed constraints (independent of the sweep)
@@ -198,10 +198,10 @@ if !pure
 end
 ```
 
-- **`op_ge`** holds operator inequalities $q\ge 0$. `npa_dual` builds one localizing matrix $\Upsilon_q=[\operatorname{Tr}(u^\dagger q\,v)]_{u,v\in\texttt{ops}}\succeq0$ for each.
-  - $\sigma-p_x\rho_x\ge0$ together with $\operatorname{Tr}\sigma\le G$ implies $P_g^A\le\sum_x\operatorname{Tr}(\sigma N_x)=\operatorname{Tr}\sigma\le G$ for any POVM $\{N_x\}$. This is how the RI assumption is encoded.
-  - $\rho_x-\rho_x^2\ge0$ bounds the spectrum of $\rho_x$ to $[0,1]$. Together with $\operatorname{Tr}\rho_x=1$, this is the tracial encoding of a (mixed) state of unspecified dimension.
-- **`tr_ge`** holds linear trace constraints `[poly, c]` meaning $\operatorname{Tr}(\text{poly})\ge c$.
+- **`op_ge`** holds operator inequalities q ≥ 0. For each q, `npa_dual` builds one localizing matrix Υ_q with entries Tr(u† q v) for u, v in `ops`, and requires Υ_q ⪰ 0.
+  - σ − pₓρₓ ≥ 0 together with Tr σ ≤ G gives, for any POVM {Nₓ}, P_g^A ≤ Σₓ Tr(σ Nₓ) = Tr σ ≤ G. This is how the RI assumption is encoded.
+  - ρₓ − ρₓ² ≥ 0 bounds the spectrum of ρₓ to [0, 1]. Together with Tr ρₓ = 1, this is the tracial encoding of a (mixed) state of unspecified dimension.
+- **`tr_ge`** holds linear trace constraints `[poly, c]` meaning Tr(poly) ≥ c.
 
 ### Stage 6: Sweep and statistics constraints
 
@@ -213,12 +213,14 @@ for i in 1:length(plx)
     tr_eq = vcat(tr_eq, [[ρ[x], 1] for x in 1:nstates])
 ```
 
-- **`tr_eq`** holds linear trace equalities `[poly, c]` meaning $\operatorname{Tr}(\text{poly})=c$:
-  - $\operatorname{Tr}(\rho_x M_{1|y})=p(1|x,y)$ for all $x,y$. Outcome 2 is implied by normalization.
-  - $\operatorname{Tr}\rho_x=1$.
-- `prob_four` / `prob_six` compute the honest $p(b|x,y)=\operatorname{Tr}(\rho_x^{v}M^{\eta}_{b|y})$ from `*_corr.jl`, with noisy states $\rho_x^{v}=v\lvert\psi_x\rangle\langle\psi_x\rvert+(1-v)\mathbb1/2$ and lossy POVMs.
-- **Binning.** `bin=true` assigns Bob's no-click event to outcome 1, $M^{\eta}_{1|y}=\eta M_{1|y}+(1-\eta)\mathbb1$. The SDP therefore sees only binary statistics. Coarse-graining can only lower the bound, so it stays valid.
-- `npa_dual` is called with `normalize=false`, so no $\operatorname{Tr}\mathbb 1=1$ constraint is added. States are normalized by $\operatorname{Tr}\rho_x=1$ instead.
+- **`tr_eq`** holds linear trace equalities `[poly, c]` meaning Tr(poly) = c:
+  - Tr(ρₓ M_{1|y}) = p(1|x,y) for all x, y. Outcome 2 is implied by normalization.
+  - Tr ρₓ = 1.
+- `prob_four` / `prob_six` (from `*_corr.jl`) compute the honest statistics p(b|x,y) = Tr(ρₓ⁽ᵛ⁾ M^η_{b|y}), using
+  - noisy states ρₓ⁽ᵛ⁾ = v |ψₓ⟩⟨ψₓ| + (1 − v) 𝟙/2, and
+  - lossy POVMs with efficiency η.
+- **Binning.** `bin=true` assigns Bob's no-click event to outcome 1: M^η_{1|y} = η M_{1|y} + (1 − η) 𝟙. The SDP therefore sees only binary statistics. Coarse-graining can only lower the bound, so it stays valid.
+- `npa_dual` is called with `normalize=false`, so no Tr 𝟙 = 1 constraint is added. States are normalized by Tr ρₓ = 1 instead.
 
 ### Stage 7: Reference entropy
 
@@ -226,7 +228,7 @@ for i in 1:length(plx)
 cond_entropy = conditional_entropy_four_A(η; v=v, bin=false)
 ```
 
-$H(A|B)$ of the honest model restricted to the key basis/bases, with **unbinned** (three-outcome) statistics because Bob does observe the no-click event. For multiple key bases it is the average over bases. It is used only for the stopping rule in Stage 12.
+H(A|B) of the honest model restricted to the key basis/bases, with **unbinned** (three-outcome) statistics because Bob does observe the no-click event. For multiple key bases it is the average over bases. It is used only for the stopping rule in Stage 12.
 
 ### Stage 8: Objective polynomials
 
@@ -242,16 +244,22 @@ objs2 = [obj_i_term_A(ρ[3:4], E[3:4], α[k], β[k]) for k in 1:tot_points]   # 
 objs  = objs1 + objs2                                                      # element-wise
 ```
 
-**Derivation.** For a key basis with states $(\rho_{x_1},\rho_{x_2})$ encoding $a=1,2$ with $p_a=\tfrac12$, the cq-state is $\rho_{AE}=\tfrac12\sum_a\lvert a\rangle\langle a\rvert\otimes\rho_{x_a}$ and $\rho_E=\tfrac12(\rho_{x_1}+\rho_{x_2})$. With $P_k=\sum_a\lvert a\rangle\langle a\rvert\otimes P_{a,k}$:
+**Derivation.** Take a key basis with states (ρ_{x1}, ρ_{x2}) encoding a = 1, 2 with p_a = ½. Then
 
-$$
-\operatorname{Tr}\big(P_k(\alpha_k\rho_{AE}+\beta_k\mathbb 1_A\otimes\rho_E)\big)
-=\tfrac12\Big[\alpha_k\textstyle\sum_a\operatorname{Tr}(P_{a,k}\rho_{x_a})+\beta_k\operatorname{Tr}\big((P_{1,k}+P_{2,k})(\rho_{x_1}+\rho_{x_2})\big)\Big].
-$$
+```text
+ρ_AE = ½ Σ_a |a⟩⟨a| ⊗ ρ_{x_a}          ρ_E = ½ (ρ_{x1} + ρ_{x2})          P_k = Σ_a |a⟩⟨a| ⊗ P_{a,k}
+```
 
-`res_αi` and `res_βi` are exactly the two traced polynomials: `Pi` = $(P_{1,k},P_{2,k})$ and `ρ` = $(\rho_{x_1},\rho_{x_2})$. The prefactor `-0.5` is $p_a=\tfrac12$ with the sign convention of the weights returned by `grid_to_coeffs`.
+and the BFF term becomes
 
-**Several key bases.** `objs1 + objs2 (+ objs3)` is element-wise vector addition. `objs[k]` is therefore the node-$k$ objective **summed over key bases**. It shares $\rho_x$, $M_{b|y}$ and $\sigma$ across bases, but each basis has its own disjoint Eve projectors. One SDP per node thus bounds all bases jointly.
+```text
+Tr( P_k (α_k ρ_AE + β_k 𝟙_A ⊗ ρ_E) )
+    = ½ [ α_k · Σ_a Tr(P_{a,k} ρ_{x_a})  +  β_k · Tr( (P_{1,k} + P_{2,k}) (ρ_{x1} + ρ_{x2}) ) ]
+```
+
+`res_αi` and `res_βi` are exactly the two traced polynomials: `Pi` = (P_{1,k}, P_{2,k}) and `ρ` = (ρ_{x1}, ρ_{x2}). The prefactor `-0.5` is p_a = ½ with the sign convention of the weights returned by `grid_to_coeffs`.
+
+**Several key bases.** `objs1 + objs2 (+ objs3)` is element-wise vector addition. `objs[k]` is therefore the node-k objective **summed over key bases**. It shares ρₓ, M_{b|y} and σ across bases, but each basis has its own disjoint Eve projectors. One SDP per node thus bounds all bases jointly.
 
 ### Stage 9: Relaxation
 
@@ -264,21 +272,21 @@ model, S, V, mons, LMI = npa_dual(0, ops, ops_principal;
 
 | Argument / return | Meaning here |
 |---|---|
-| `level` (default `"1+B*E"`) | Monomial set $S$ of the relaxation: the identity, all single letters (`B`, `E`, `ρ`, `σ`) and all products `B[y]*E[j]`. |
+| `level` (default `"1+B*E"`) | Monomial set of the relaxation: the identity, all single letters (`B`, `E`, `ρ`, `σ`) and all products `B[y]*E[j]`. |
 | `[]` (`op_eq`) | No operator equalities. Projectivity and commutation are enforced by the monoid itself. |
 | `M.vertices` | All letters of the monoid, used to generate the monomials of `level`. |
 | `-1` (`lvl_lm`) | Automatic localizing level: `ops` is the monomial set at `level`, and `ops_principal` is `ops` extended by products with the letters appearing in `op_ge` (degree ⌈deg q / 2⌉ = 1). This makes each localizing matrix a principal submatrix of the moment matrix. |
-| `ops_principal` | Index set of the moment matrix $\Gamma=[\operatorname{Tr}(u^\dagger v)]$. |
-| `ops` | Index set of each localizing matrix $\Upsilon_q$, one per element of `op_ge`. |
+| `ops_principal` | Index set of the moment matrix Γ, with entries Tr(u† v). |
+| `ops` | Index set of each localizing matrix Υ_q, one per element of `op_ge`. |
 | `obj = 0` | The model is built without an objective. The objective is inserted in Stage 10. |
 | `min=true` | Minimization. Internally `s = -1`, and the dual SDP is a maximization whose value lower-bounds the infimum. |
-| `tracial=true` | Cyclic moments: $\operatorname{Tr}(uv)=\operatorname{Tr}(vu)$ identifies moment entries. |
+| `tracial=true` | Cyclic moments: Tr(uv) = Tr(vu) identifies moment entries. |
 | `change_objective=true` | Also returns `S`, `V`, `mons` and `LMI`, so the objective can be swapped without rebuilding. |
-| `S` | Dual polynomial identity, $-\text{obj} + \sum Z_{\text{eq}}\,\text{tr\_eq} - s\sum Z_{\text{ge}}\,\text{tr\_ge}$, matched against the LMI blocks. |
+| `S` | Dual polynomial identity, `−obj + Σ Z_eq·tr_eq − s·Σ Z_ge·tr_ge`, matched against the LMI blocks. |
 | `V` | Constraint references generated from `S` (the objective-dependent part of the model). |
 | `LMI`, `mons` | Moment/localizing blocks and the set of reduced trace monomials. |
 
-The relaxation is rebuilt at every sweep point because `tr_eq` changes with $\eta$ or $v$. It is **not** rebuilt per grid node.
+The relaxation is rebuilt at every sweep point because `tr_eq` changes with η or v. It is **not** rebuilt per grid node.
 
 ### Stage 10: Per-node solves
 
@@ -296,7 +304,7 @@ end
 ```
 
 - `model_new_obj` deletes the constraints `V` and regenerates them from the updated `S`. Only the objective changes between nodes.
-- Each node is solved independently, and the values are summed: $\sum_k\inf\operatorname{Tr}F_k\le\inf\sum_k\operatorname{Tr}F_k$. This is the "localized objective" referred to in the docstrings. It is still a valid lower bound and keeps each SDP small.
+- Each node is solved independently, and the values are summed: Σ_k inf Tr F_k ≤ inf Σ_k Tr F_k. This is the "localized objective" referred to in the docstrings. It is still a valid lower bound and keeps each SDP small.
 
 ### Stage 11: Entropy bound
 
@@ -304,7 +312,7 @@ end
 ply[i] = (2+obj_val)/(2*log(2))   # written with the literal n_b: (1+·)/ln2, (2+·)/(2ln2), (3+·)/(3ln2)
 ```
 
-For each key basis, $\operatorname{Tr}(\mathbb 1_A\otimes\rho_E-\rho_{AE})=2\cdot1-1=1$, so the constant term summed over bases is $n_b$. Dividing by $n_b$ averages over the key bases. `ply[i]` is the bound on $H(A|E)$ in bits.
+For each key basis, Tr(𝟙_A ⊗ ρ_E − ρ_AE) = 2·1 − 1 = 1, so the constant term summed over bases is n_b. Dividing by n_b averages over the key bases. `ply[i]` is the bound on H(A|E) in bits.
 
 ### Stage 12: Output and stopping rule
 
@@ -319,7 +327,7 @@ if ply[i] - cond_entropy < tol
 end
 ```
 
-Each sweep point appends one line `x  H(A|E)` to `fpath`. The sweep stops once $H(A|E)-H(A|B)$ falls below `tol`, i.e. once the key rate is no longer positive. The functions return `plx, ply`. Entries of `ply` after the break keep their initial value `1.0` and should be ignored.
+Each sweep point appends one line `x  H(A|E)` to `fpath`. The sweep stops once H(A|E) − H(A|B) falls below `tol`, i.e. once the key rate is no longer positive. The functions return `plx, ply`. Entries of `ply` after the break keep their initial value `1.0` and should be ignored.
 
 ---
 
@@ -331,13 +339,13 @@ Every function uses these names with the same meaning.
 
 | Variable | Symbol | Meaning |
 |---|---|---|
-| `G` | $G$ | Upper bound on Alice's guessing probability $P_g^A$ (RI parameter). $G=1/\text{nstates}$ is the fully restricted case. |
-| `v` | $v$ | Visibility of the honest states, $\rho_x^{v}=v\lvert\psi_x\rangle\langle\psi_x\rvert+(1-v)\mathbb 1/2$. |
-| `η` | $\eta$ | Bob's detection efficiency. |
+| `G` | G | Upper bound on Alice's guessing probability P_g^A (RI parameter). G = 1/nstates is the fully restricted case. |
+| `v` | v | Visibility of the honest states: ρₓ⁽ᵛ⁾ = v \|ψₓ⟩⟨ψₓ\| + (1 − v) 𝟙/2. |
+| `η` | η | Bob's detection efficiency. |
 | `level` | — | Relaxation level string passed to `basis_gen`. |
-| `step_size`, `start_grid`, `stop_grid`, `uniform` | $\{t_k\}$ | BFF grid parameters. |
+| `step_size`, `start_grid`, `stop_grid`, `uniform` | {t_k} | BFF grid parameters. |
 | `eta_start` / `v_start` | — | First value of the sweep (decreasing in steps of 0.01). |
-| `pure` | — | `true`: states are projectors. `false`: mixed states via $\rho_x-\rho_x^2\ge0$. |
+| `pure` | — | `true`: states are projectors. `false`: mixed states via ρₓ − ρₓ² ≥ 0. |
 | `fname` | — | Output directory prefix. |
 | `optimizer` | — | JuMP optimizer (Mosek by default). |
 
@@ -345,26 +353,26 @@ Every function uses these names with the same meaning.
 
 | Variable | Symbol | Meaning |
 |---|---|---|
-| `nstates`, `nmeas`, `nbasis` | $\lvert X\rvert$, $\lvert Y\rvert$, $n_b$ | Protocol constants. |
-| `points` | $t_k$ | Grid nodes. |
-| `α`, `β` | $\alpha_k,\beta_k$ | BFF weights. |
+| `nstates`, `nmeas`, `nbasis` | \|X\|, \|Y\|, n_b | Protocol constants. |
+| `points` | t_k | Grid nodes. |
+| `α`, `β` | α_k, β_k | BFF weights. |
 | `tot_points` | — | Number of grid nodes, i.e. SDPs per sweep point. |
 | `M` | — | PCPOP graph-product monoid holding all letters. |
-| `B[y]`, `PB[1,y]` | $M_{1\lvert y}$ | Bob's outcome-1 projector. |
-| `1-B[y]`, `PB[2,y]` | $M_{2\lvert y}$ | Bob's outcome-2 projector. |
-| `E[2r-1]`, `E[2r]` | $P^{(r)}_{1,k},P^{(r)}_{2,k}$ | Eve's BFF projectors for key basis $r$. |
-| `ρ[x]` = `BE[x]` | $\rho_x$ | Alice's prepared state (dimension-free). |
-| `σ` = `BE[end]` | $\sigma$ | Auxiliary operator certifying $P_g^A\le\operatorname{Tr}\sigma$. |
-| `op_ge` | $q\ge0$ | Operator inequalities → localizing matrices. |
-| `tr_ge` | $\operatorname{Tr}(\cdot)\ge c$ | Linear trace inequalities. |
-| `tr_eq` | $\operatorname{Tr}(\cdot)=c$ | Linear trace equalities (statistics and normalization). |
-| `plx` | $\eta$ or $v$ | Sweep values. |
-| `cond_entropy` | $H(A\lvert B)$ | Honest error-correction cost (unbinned). |
-| `objs`, `objs1..3` | $F_k$ | Objective polynomials per node (per key basis before summation). |
-| `ops`, `ops_principal` | $S$ | Monomial index sets of the localizing and moment matrices. |
-| `model`, `S`, `V`, `mons`, `LMI` | $\Gamma,\Upsilon_q$ | Dual SDP and its objective-swap handles. |
-| `obj_val` | $\sum_k\inf\operatorname{Tr}F_k$ | Accumulated optimal values. |
-| `ply` | $H(A\lvert E)$ | Lower bound in bits for each sweep point. |
+| `B[y]`, `PB[1,y]` | M_{1\|y} | Bob's outcome-1 projector. |
+| `1-B[y]`, `PB[2,y]` | M_{2\|y} | Bob's outcome-2 projector. |
+| `E[2r-1]`, `E[2r]` | P⁽ʳ⁾_{1,k}, P⁽ʳ⁾_{2,k} | Eve's BFF projectors for key basis r. |
+| `ρ[x]` = `BE[x]` | ρₓ | Alice's prepared state (dimension-free). |
+| `σ` = `BE[end]` | σ | Auxiliary operator certifying P_g^A ≤ Tr σ. |
+| `op_ge` | q ≥ 0 | Operator inequalities → localizing matrices. |
+| `tr_ge` | Tr(·) ≥ c | Linear trace inequalities. |
+| `tr_eq` | Tr(·) = c | Linear trace equalities (statistics and normalization). |
+| `plx` | η or v | Sweep values. |
+| `cond_entropy` | H(A\|B) | Honest error-correction cost (unbinned). |
+| `objs`, `objs1..3` | F_k | Objective polynomials per node (per key basis before summation). |
+| `ops`, `ops_principal` | — | Monomial index sets of the localizing and moment matrices. |
+| `model`, `S`, `V`, `mons`, `LMI` | Γ, Υ_q | Dual SDP and its objective-swap handles. |
+| `obj_val` | Σ_k inf Tr F_k | Accumulated optimal values. |
+| `ply` | H(A\|E) | Lower bound in bits for each sweep point. |
 | `fpath` | — | Output file. |
 
 ---
@@ -373,18 +381,18 @@ Every function uses these names with the same meaning.
 
 | Physical constraint | Where it lives | Code |
 |---|---|---|
-| $M_{b\lvert y}^2=M_{b\lvert y}$ | monoid rule | `Projector.(B)` |
-| $\sum_b M_{b\lvert y}=\mathbb 1$, $M_{1\lvert y}M_{2\lvert y}=0$ | parameterization | `PB[2,y] = 1-B[y]` |
-| $P_{a,k}^2=P_{a,k}$ | monoid rule | `Projector.(E)` |
-| $[P_{a,k},M_{b\lvert y}]=0$ | monoid rule | `@comms B E` |
-| $\rho_x^2=\rho_x$ (pure only) | monoid rule | `Projector.(BE[1:nstates])` |
-| $\rho_x-\rho_x^2\ge0$ (mixed) | localizing matrix | `op_ge` |
-| $\sigma-p_x\rho_x\ge0$ | localizing matrix | `op_ge` |
-| $\operatorname{Tr}\sigma\le G$ | linear constraint | `tr_ge = [[-σ,-G]]` |
-| $\operatorname{Tr}\rho_x=1$ | linear constraint | `tr_eq` |
-| $\operatorname{Tr}(\rho_x M_{1\lvert y})=p(1\lvert x,y)$ | linear constraint | `tr_eq` |
-| Cyclicity $\operatorname{Tr}(uv)=\operatorname{Tr}(vu)$ | moment identification | `npa_dual(…; tracial=true)` |
-| Moment matrix $\Gamma\succeq0$ | PSD block | `ops_principal` |
+| M_{b\|y}² = M_{b\|y} | monoid rule | `Projector.(B)` |
+| Σ_b M_{b\|y} = 𝟙, M_{1\|y} M_{2\|y} = 0 | parameterization | `PB[2,y] = 1-B[y]` |
+| P_{a,k}² = P_{a,k} | monoid rule | `Projector.(E)` |
+| [P_{a,k}, M_{b\|y}] = 0 | monoid rule | `@comms B E` |
+| ρₓ² = ρₓ (pure only) | monoid rule | `Projector.(BE[1:nstates])` |
+| ρₓ − ρₓ² ≥ 0 (mixed) | localizing matrix | `op_ge` |
+| σ − pₓ ρₓ ≥ 0 | localizing matrix | `op_ge` |
+| Tr σ ≤ G | linear constraint | `tr_ge = [[-σ,-G]]` |
+| Tr ρₓ = 1 | linear constraint | `tr_eq` |
+| Tr(ρₓ M_{1\|y}) = p(1\|x,y) | linear constraint | `tr_eq` |
+| Cyclicity Tr(uv) = Tr(vu) | moment identification | `npa_dual(…; tracial=true)` |
+| Moment matrix Γ ⪰ 0 | PSD block | `ops_principal` |
 
 ---
 
@@ -394,9 +402,9 @@ Defined in `two_meas/two_meas_corr.jl` and `four_meas/four_meas_corr.jl`.
 
 | Protocol | States `x` | Measurements `y` | Key (states; setting) |
 |---|---|---|---|
-| (4,2) | 1 → $\lvert0\rangle$, 2 → $\lvert1\rangle$, 3 → $\lvert+\rangle$, 4 → $\lvert-\rangle$ | 1 → Z, 2 → π/8 | (1,2; y=1) |
+| (4,2) | 1 → \|0⟩, 2 → \|1⟩, 3 → \|+⟩, 4 → \|−⟩ | 1 → Z, 2 → π/8 | (1,2; y=1) |
 | (4,4) | as (4,2) | 1 → Z, 2 → +π/8, 3 → −π/8, 4 → X | (1,2; y=1), (3,4; y=4) |
-| (6,4) | 1,2,3 → $\lvert0\rangle,\lvert+\rangle,\lvert\pi/8\rangle$; 4,5,6 → orthogonal partners | 1 → Z, 2 → X, 3 → +π/8, 4 → −π/8 | (1,4; y=1), (2,5; y=2), (3,6; y=3) |
+| (6,4) | 1, 2, 3 → \|0⟩, \|+⟩, \|π/8⟩; 4, 5, 6 → orthogonal partners | 1 → Z, 2 → X, 3 → +π/8, 4 → −π/8 | (1,4; y=1), (2,5; y=2), (3,6; y=3) |
 
 The index of the X measurement differs between `povm_four` (y = 4) and `povm_six` (y = 2).
 
@@ -404,9 +412,9 @@ The index of the X measurement differs between `povm_four` (y = 4) and `povm_six
 
 ## 8. Output and usage
 
-Output files contain two columns, the swept parameter and the lower bound on $H(A|E)$ in bits:
+Output files contain two columns, the swept parameter and the lower bound on H(A|E) in bits:
 
-```
+```text
 1.0  0.9999264850777991
 0.99 0.9216597639180786
 ...
